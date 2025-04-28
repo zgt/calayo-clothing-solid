@@ -7,14 +7,19 @@
     "start": "vinxi start"
   },
   "dependencies": {
+    "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.15.0",
     "@solidjs/start": "^1.1.0",
+    "@supabase/supabase-js": "^2.49.4",
     "corvu": "^0.7.2",
     "media-icons": "^1.1.5",
     "solid-js": "^1.9.5",
-    "solid-plyr": "^1.0.10",
+    "solid-motionone": "^1.0.4",
+    "solid-supabase": "^0.5.0",
+    "solid-toast": "^0.5.0",
     "vidstack": "^1.12.13",
-    "vinxi": "^0.5.3"
+    "vinxi": "^0.5.3",
+    "vite": "^6.3.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.7",
