@@ -2,6 +2,8 @@ import { createSignal, createEffect, Show } from "solid-js";
 import { Motion } from "solid-motionone";
 import { toast, Toaster } from "solid-toast";
 import { useNavigate } from "@solidjs/router";
+import { useSupabase } from "solid-supabase";
+import { useAuth } from "~/context/auth"; // Import the auth context
 
 export interface CommissionFormData {
   _id: string;
@@ -22,6 +24,10 @@ export interface CommissionFormData {
 }
 
 export default function Commissions() {
+  const supabase = useSupabase();
+  const auth = useAuth();
+  const navigate = useNavigate();
+  
   const [formData, setFormData] = createSignal<CommissionFormData>({
     _id: "",
     status: "",
@@ -42,17 +48,45 @@ export default function Commissions() {
 
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const [isLoading, setIsLoading] = createSignal(false);
-  const navigate = useNavigate();
 
-  // Mock function - replace with your actual API call
+  // Function to submit commission to Supabase
   const submitCommission = async (data: CommissionFormData) => {
-    // Simulate API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log("Submitted data:", data);
-        resolve({ success: true });
-      }, 1000);
-    });
+    // First, check if user is authenticated
+    if (!auth.isAuthenticated()) {
+      toast.error("You must be logged in to submit a commission request");
+      navigate("/login", { replace: true });
+      return null;
+    }
+    
+    try {
+      // Format the data for PostgreSQL
+      const submissionData = {
+        status: data.status,
+        garment_type: data.garmentType,
+        measurements: data.measurements, // Using JSONB column in PostgreSQL
+        budget: data.budget,
+        timeline: data.timeline,
+        details: data.details,
+        user_id: data.user_id
+      };
+      
+      // Insert into the commissions table
+      const { data: insertedData, error } = await supabase
+        .from('commissions')
+        .insert(submissionData)
+        .select('id')
+        .single();
+        
+      if (error) {
+        console.error("Supabase error:", error);
+        throw new Error(error.message);
+      }
+      
+      return insertedData;
+    } catch (error) {
+      console.error("Error submitting commission:", error);
+      throw error;
+    }
   };
 
   const validateForm = () => {
@@ -111,11 +145,22 @@ export default function Commissions() {
       return;
     }
     
+    // Check if user is authenticated before submitting
+    if (!auth.isAuthenticated()) {
+      toast.error("You must be logged in to submit a commission request");
+      navigate("/login", { replace: true });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
-      // Mock user authentication - replace with your actual auth system
-      const userId = "user123"; // This would come from your auth system
+      // Get the current authenticated user's ID
+      const userId = auth.user()?.id;
+      
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
       
       const submissionData = {
         ...formData(),
@@ -127,10 +172,27 @@ export default function Commissions() {
       
       if (result) {
         toast.success("Commission request successfully submitted!");
-        // Optionally reset form or redirect
-        // navigate("/dashboard");
-      } else {
-        toast.error("Commission request error, please try submitting again.");
+        // Reset form
+        setFormData({
+          _id: "",
+          status: "",
+          garmentType: "",
+          measurements: {
+            chest: 0,
+            waist: 0,
+            hips: 0,
+            length: 0,
+            inseam: 0,
+            shoulders: 0
+          },
+          budget: "",
+          timeline: "",
+          details: "",
+          user_id: ""
+        });
+        
+        // Redirect to dashboard or commissions list
+        navigate("/profile/orders");
       }
     } catch (error) {
       toast.error("An error occurred while submitting your request.");
@@ -194,6 +256,14 @@ export default function Commissions() {
       e.preventDefault();
     }
   };
+
+  // Redirect to login if not authenticated
+  createEffect(() => {
+    if (!auth.isLoading() && !auth.isAuthenticated()) {
+      toast.error("You must be logged in to create a commission");
+      navigate("/login", { replace: true });
+    }
+  });
 
   return (
     <main class="min-h-screen bg-gradient-to-b from-emerald-950 to-gray-950 flex items-center justify-center p-4">

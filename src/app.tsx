@@ -6,6 +6,8 @@ import "./app.css";
 import { createClient } from '@supabase/supabase-js';
 import { SupabaseProvider } from 'solid-supabase';
 import { AuthProvider } from "./context/auth";
+import { Toaster } from "solid-toast";
+
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
 const supabaseKey = import.meta.env.VITE_SUPABASE_KEY!;
@@ -26,7 +28,9 @@ export default function App() {
         >
           <FileRoutes />
         </Router>
+        <Toaster /> 
       </AuthProvider>
     </SupabaseProvider>
+    
   );
 }

@@ -46,11 +46,11 @@ export default function Nav() {
 
         {/* Right side - Profile */}
         <div class="flex items-center">
-          {/* <Show when={!isLoginPage()}> */}
+          <Show when={!isLoginPage()}>
             <div class="flex items-center">
               <ProfileDropdown />
             </div>
-          {/* </Show> */}
+          </Show>
           
           {/* Mobile menu button */}
           <button class="ml-4 md:hidden rounded-lg p-2 text-emerald-100 hover:bg-emerald-700/50 hover:text-white">
