@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SupabaseProvider } from 'solid-supabase';
 import { AuthProvider } from "./context/auth";
 
-const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY);
+const supabase = createClient(import.meta.env.SUPABASE_URL, import.meta.env.SUPABASE_KEY);
 
 
 export default function App() {
