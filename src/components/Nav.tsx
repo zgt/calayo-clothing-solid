@@ -38,8 +38,8 @@ export default function Nav() {
             <li class={`border-b-2 py-2 transition-colors duration-200 ${active("/features")}`}>
               <a href="/features" class="px-1">Features</a>
             </li>
-            <li class={`border-b-2 py-2 transition-colors duration-200 ${active("/contact")}`}>
-              <a href="/contact" class="px-1">Contact</a>
+            <li class={`border-b-2 py-2 transition-colors duration-200 ${active("/about")}`}>
+              <a href="/about" class="px-1">About me</a>
             </li>
           </ul>
         </div>

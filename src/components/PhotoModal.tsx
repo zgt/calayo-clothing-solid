@@ -34,9 +34,9 @@ export default function PhotoModal(props: any) {
                     ></div>
                     
                     <Motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
+                        initial={{ opacity: 0, y: -1000 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3, easing: "ease-out" }}
+                        transition={{ duration: 0.3, easing: "ease-in" }}
                         class="relative w-full max-w-7xl transform overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-900/95 to-emerald-950/95 p-6 text-left shadow-xl transition-all sm:p-8"
                     >
                         {/* Header area */}
