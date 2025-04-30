@@ -1,11 +1,13 @@
 import { createSignal, createEffect, Show } from "solid-js";
+import { useSupabase } from "solid-supabase";
 import { toast } from "solid-toast";
 import { fetchProfileMeasurements, UserMeasurements } from "~/api/user/fetchProfileMeasurements";
-import { saveProfileMeasurements } from "~/api/user/saveProfileMeasurements";
 import { useAuth } from "~/context/auth";
 
 export default function ProfileMeasurements() {
   const auth = useAuth();
+  const supabase = useSupabase();
+
   
   const [measurements, setMeasurements] = createSignal<UserMeasurements>({
     chest: 0,
@@ -40,7 +42,6 @@ export default function ProfileMeasurements() {
     
     try {
       const userMeasurements = await fetchProfileMeasurements(userId);
-      console.log(userMeasurements)
       
       // Update measurements state with values from profile
       setMeasurements({
@@ -81,8 +82,18 @@ export default function ProfileMeasurements() {
     
     try {
       // Send measurements to server
-      await saveProfileMeasurements(userId, measurements());
-      
+const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          updated_at: new Date().toISOString(),
+          chest: measurements().chest || null,
+          waist: measurements().waist || null,
+          hips: measurements().hips || null,
+          length: measurements().length || null,
+          inseam: measurements().inseam || null,
+          shoulders: measurements().shoulders || null,
+        })
+        .eq('id', userId);      
       setSuccessMessage("Your measurements have been saved successfully");
       toast.success("Measurements saved successfully");
     } catch (err) {

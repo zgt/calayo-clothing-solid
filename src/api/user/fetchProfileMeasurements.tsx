@@ -20,7 +20,7 @@ export async function fetchProfileMeasurements(userId: string) {
     // Fetch profile measurements from the profiles table
     const { data, error } = await supabase
       .from('profiles')
-      .select('measurements')
+      .select('chest, waist, hips, length, inseam, shoulders')
       .eq('id', userId)
       .single();
     
@@ -28,23 +28,15 @@ export async function fetchProfileMeasurements(userId: string) {
       throw new Error(error.message);
     }
     
-    // If the user has measurements stored in their profile, parse and return them
-    if (data && data.measurements) {
-      try {
-        // Parse the JSON string back into an object
-        const parsedMeasurements = typeof data.measurements === 'string' 
-          ? JSON.parse(data.measurements) 
-          : data.measurements;
-        
-        return parsedMeasurements as UserMeasurements;
-      } catch (parseError) {
-        console.error("Error parsing measurements:", parseError);
-        return {} as UserMeasurements;
-      }
-    }
-    
-    // Return empty measurements object if none found
-    return {} as UserMeasurements;
+    // Return the measurements directly from the columns
+    return {
+      chest: data?.chest,
+      waist: data?.waist,
+      hips: data?.hips,
+      length: data?.length,
+      inseam: data?.inseam,
+      shoulders: data?.shoulders
+    } as UserMeasurements;
   } catch (error) {
     console.error("Error fetching profile measurements:", error);
     throw error;

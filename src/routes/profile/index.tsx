@@ -120,24 +120,20 @@ export default function Profile() {
           website: data.website,
           location: data.location,
           phone: data.phone,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          chest: parseFloat(data.chest) || undefined,
+          waist: parseFloat(data.waist) || undefined,
+          hips: parseFloat(data.hips) || undefined,
+          length: parseFloat(data.length) || undefined,
+          inseam: parseFloat(data.inseam) || undefined,
+          shoulders: parseFloat(data.shoulders) || undefined
         })
         .eq('id', userId);
       
       if (profileError) throw profileError;
       
-      // Update measurements
-      const measurementsData: UserMeasurements = {
-        chest: parseFloat(data.chest) || undefined,
-        waist: parseFloat(data.waist) || undefined,
-        hips: parseFloat(data.hips) || undefined,
-        length: parseFloat(data.length) || undefined,
-        inseam: parseFloat(data.inseam) || undefined,
-        shoulders: parseFloat(data.shoulders) || undefined
-      };
-      console.log(measurementsData)
       
-      await saveProfileMeasurements(userId, measurementsData);
+      //await saveProfileMeasurements(userId, measurementsData);
       
       // Refresh profile data
       await fetchProfileData();
