@@ -2,8 +2,10 @@ import { createSignal, createEffect, Show } from "solid-js";
 import { Motion } from "solid-motionone";
 import { toast, Toaster } from "solid-toast";
 import { useNavigate } from "@solidjs/router";
-import { useSupabase } from "solid-supabase";
 import { useAuth } from "~/context/auth";
+import { useSupabase } from "solid-supabase";
+import { fetchProfileMeasurements, UserMeasurements } from "~/api/user/fetchProfileMeasurements";
+import { saveProfileMeasurements } from "~/api/user/saveProfileMeasurements";
 
 interface ProfileData {
   id: string;
@@ -17,13 +19,6 @@ interface ProfileData {
   preferences: string | null;
   created_at: string;
   updated_at: string;
-  // Measurements
-  chest: string | null;
-  waist: string | null;
-  hips: string | null;
-  length: string | null;
-  inseam: string | null;
-  shoulders: string | null;
 }
 
 export default function Profile() {
@@ -32,12 +27,9 @@ export default function Profile() {
   const navigate = useNavigate();
   
   const [profileData, setProfileData] = createSignal<ProfileData | null>(null);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
   const [editMode, setEditMode] = createSignal(false);
-  const [isSubmitting, setIsSubmitting] = createSignal(false);
-  
-  // Editable form data
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
   const [formData, setFormData] = createSignal({
     full_name: "",
     bio: "",
@@ -51,113 +43,115 @@ export default function Profile() {
     inseam: "",
     shoulders: ""
   });
-  
-  // Fetch user profile data
+  const [measurements, setMeasurements] = createSignal<UserMeasurements>({
+    chest: 0,
+    waist: 0,
+    hips: 0,
+    length: 0,
+    inseam: 0,
+    shoulders: 0
+  });
+
+  // Fetch profile data
   const fetchProfileData = async () => {
-    setIsLoading(true);
-    setError(null);
+    if (!auth.isAuthenticated() || !auth.user()) return;
+    
+    setLoading(true);
     
     try {
-      // Check if user is authenticated
-      if (!auth.isAuthenticated()) {
-        throw new Error("You must be logged in to view your profile");
-      }
-      
       const userId = auth.user()?.id;
+      if (!userId) return;
       
-      if (!userId) {
-        throw new Error("User ID not found");
-      }
-      
-      // Fetch profile from Supabase
+      // Fetch profile data
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
-        
-      if (error) {
-        throw new Error(error.message);
-      }
       
-      setProfileData(data as ProfileData);
+      if (error) throw error;
       
-      // Initialize form data with current values
+      setProfileData(data);
+      
+      // Fetch measurements
+      const userMeasurements = await fetchProfileMeasurements(userId);
+      setMeasurements(userMeasurements);
+      
+      // Update form data
       setFormData({
         full_name: data.full_name || "",
         bio: data.bio || "",
         website: data.website || "",
         location: data.location || "",
         phone: data.phone || "",
-        chest: data.chest || "",
-        waist: data.waist || "",
-        hips: data.hips || "",
-        length: data.length || "",
-        inseam: data.inseam || "",
-        shoulders: data.shoulders || ""
+        chest: userMeasurements.chest?.toString() || "",
+        waist: userMeasurements.waist?.toString() || "",
+        hips: userMeasurements.hips?.toString() || "",
+        length: userMeasurements.length?.toString() || "",
+        inseam: userMeasurements.inseam?.toString() || "",
+        shoulders: userMeasurements.shoulders?.toString() || ""
       });
-    } catch (err: any) {
-      setError(err.message);
-      toast.error(err.message);
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      toast.error("Failed to load profile data");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
-  
+
   // Update profile
   const updateProfile = async () => {
-    setIsSubmitting(true);
+    if (!auth.isAuthenticated() || !auth.user()) return;
+    
+    setLoading(true);
     
     try {
       const userId = auth.user()?.id;
+      if (!userId) return;
       
-      if (!userId) {
-        throw new Error("User ID not found");
-      }
+      const data = formData();
       
-      const { error } = await supabase
+      // Update profile data
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          ...formData(),
+          full_name: data.full_name,
+          bio: data.bio,
+          website: data.website,
+          location: data.location,
+          phone: data.phone,
           updated_at: new Date().toISOString()
         })
         .eq('id', userId);
-        
-      if (error) {
-        throw new Error(error.message);
-      }
       
-      // Update local state
-      setProfileData(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          ...formData(),
-          updated_at: new Date().toISOString()
-        };
-      });
+      if (profileError) throw profileError;
+      
+      // Update measurements
+      const measurementsData: UserMeasurements = {
+        chest: parseFloat(data.chest) || undefined,
+        waist: parseFloat(data.waist) || undefined,
+        hips: parseFloat(data.hips) || undefined,
+        length: parseFloat(data.length) || undefined,
+        inseam: parseFloat(data.inseam) || undefined,
+        shoulders: parseFloat(data.shoulders) || undefined
+      };
+      console.log(measurementsData)
+      
+      await saveProfileMeasurements(userId, measurementsData);
+      
+      // Refresh profile data
+      await fetchProfileData();
       
       toast.success("Profile updated successfully");
       setEditMode(false);
-    } catch (err: any) {
-      toast.error("Failed to update profile: " + err.message);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error("Failed to update profile");
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
-  
-  // Format date
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "N/A";
-    
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-  
+
   // Handle input change
   const handleInputChange = (e: Event) => {
     const target = e.target as HTMLInputElement;
@@ -168,22 +162,10 @@ export default function Profile() {
       [name]: value
     }));
   };
-  
-  // Generate avatar initials
-  const getInitials = () => {
-    const name = profileData()?.full_name || "";
-    if (!name) return "U";
-    
-    const parts = name.split(" ");
-    if (parts.length === 1) return name.charAt(0).toUpperCase();
-    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-  };
-  
+
   // Check if any measurements are provided
   const hasMeasurements = () => {
-    const data = profileData();
-    if (!data) return false;
-    
+    const data = measurements();
     return !!(data.chest || data.waist || data.hips || data.length || data.inseam || data.shoulders);
   };
 
@@ -192,6 +174,7 @@ export default function Profile() {
     if (editMode()) {
       // Reset form data when canceling edit
       const data = profileData();
+      const meas = measurements();
       if (data) {
         setFormData({
           full_name: data.full_name || "",
@@ -199,12 +182,12 @@ export default function Profile() {
           website: data.website || "",
           location: data.location || "",
           phone: data.phone || "",
-          chest: data.chest || "",
-          waist: data.waist || "",
-          hips: data.hips || "",
-          length: data.length || "",
-          inseam: data.inseam || "",
-          shoulders: data.shoulders || ""
+          chest: meas.chest?.toString() || "",
+          waist: meas.waist?.toString() || "",
+          hips: meas.hips?.toString() || "",
+          length: meas.length?.toString() || "",
+          inseam: meas.inseam?.toString() || "",
+          shoulders: meas.shoulders?.toString() || ""
         });
       }
     }
@@ -228,6 +211,28 @@ export default function Profile() {
     }
   });
 
+  // Format date
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "N/A";
+    
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Generate avatar initials
+  const getInitials = () => {
+    const name = profileData()?.full_name || "";
+    if (!name) return "U";
+    
+    const parts = name.split(" ");
+    if (parts.length === 1) return name.charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  };
+
   return (
     <main class="min-h-screen bg-gradient-to-b from-emerald-950 to-gray-950 py-10 px-4 sm:px-6">
       <div class="max-w-4xl mx-auto">
@@ -239,7 +244,7 @@ export default function Profile() {
           <h1 class="text-3xl font-bold text-white mb-8">My Profile</h1>
           
           {/* Loading State */}
-          <Show when={isLoading()}>
+          <Show when={loading()}>
             <div class="bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 p-10">
               <div class="flex flex-col items-center justify-center py-10">
                 <div class="animate-spin h-10 w-10 border-4 border-emerald-500 rounded-full border-t-transparent"></div>
@@ -249,7 +254,7 @@ export default function Profile() {
           </Show>
           
           {/* Error State */}
-          <Show when={!isLoading() && error()}>
+          <Show when={!loading() && error()}>
             <div class="bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 p-10">
               <div class="flex flex-col items-center justify-center py-10">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-red-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -276,7 +281,7 @@ export default function Profile() {
           </Show>
           
           {/* Profile Content */}
-          <Show when={!isLoading() && !error() && profileData()}>
+          <Show when={!loading() && !error() && profileData()}>
             {/* View Mode */}
             <Show when={!editMode()}>
               <div class="bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 overflow-hidden">
@@ -407,45 +412,45 @@ export default function Profile() {
                           }
                         >
                           <div class="grid grid-cols-2 gap-4">
-                            <Show when={profileData()?.chest}>
+                            <Show when={measurements().chest}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Chest</span>
-                                <span class="text-emerald-100">{profileData()?.chest} inches</span>
+                                <span class="text-emerald-100">{measurements().chest} inches</span>
                               </div>
                             </Show>
                             
-                            <Show when={profileData()?.shoulders}>
+                            <Show when={measurements().shoulders}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Shoulders</span>
-                                <span class="text-emerald-100">{profileData()?.shoulders} inches</span>
+                                <span class="text-emerald-100">{measurements().shoulders} inches</span>
                               </div>
                             </Show>
                             
-                            <Show when={profileData()?.waist}>
+                            <Show when={measurements().waist}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Waist</span>
-                                <span class="text-emerald-100">{profileData()?.waist} inches</span>
+                                <span class="text-emerald-100">{measurements().waist} inches</span>
                               </div>
                             </Show>
                             
-                            <Show when={profileData()?.hips}>
+                            <Show when={measurements().hips}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Hips</span>
-                                <span class="text-emerald-100">{profileData()?.hips} inches</span>
+                                <span class="text-emerald-100">{measurements().hips} inches</span>
                               </div>
                             </Show>
                             
-                            <Show when={profileData()?.length}>
+                            <Show when={measurements().length}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Length</span>
-                                <span class="text-emerald-100">{profileData()?.length} inches</span>
+                                <span class="text-emerald-100">{measurements().length} inches</span>
                               </div>
                             </Show>
                             
-                            <Show when={profileData()?.inseam}>
+                            <Show when={measurements().inseam}>
                               <div>
                                 <span class="block text-xs text-emerald-400/80 mb-1">Inseam</span>
-                                <span class="text-emerald-100">{profileData()?.inseam} inches</span>
+                                <span class="text-emerald-100">{measurements().inseam} inches</span>
                               </div>
                             </Show>
                           </div>
@@ -658,11 +663,11 @@ export default function Profile() {
                       
                       <button
                         type="submit"
-                        disabled={isSubmitting()}
+                        disabled={loading()}
                         class="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-medium rounded-lg shadow-lg shadow-emerald-900/30 flex items-center justify-center transition-all duration-200 hover:shadow-emerald-800/40 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                         <Show 
-                          when={isSubmitting()}
+                          when={loading()}
                           fallback={
                             <>
                               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">

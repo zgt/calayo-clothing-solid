@@ -3,7 +3,8 @@ import { Motion } from "solid-motionone";
 import { toast, Toaster } from "solid-toast";
 import { useNavigate } from "@solidjs/router";
 import { useSupabase } from "solid-supabase";
-import { useAuth } from "~/context/auth"; // Import the auth context
+import { useAuth } from "~/context/auth";
+import { fetchProfileMeasurements, UserMeasurements } from "~/api/user/fetchProfileMeasurements";
 
 export interface CommissionFormData {
   _id: string;
@@ -48,6 +49,54 @@ export default function Commissions() {
 
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const [isLoading, setIsLoading] = createSignal(false);
+  const [isLoadingMeasurements, setIsLoadingMeasurements] = createSignal(false);
+
+  // Function to load measurements from user profile
+  const loadMeasurementsFromProfile = async () => {
+    if (!auth.isAuthenticated()) {
+      toast.error("You must be logged in to load your measurements");
+      navigate("/login", { replace: true });
+      return;
+    }
+    
+    const userId = auth.user()?.id;
+    
+    if (!userId) {
+      toast.error("User ID not found");
+      return;
+    }
+    
+    setIsLoadingMeasurements(true);
+    
+    try {
+      const measurements = await fetchProfileMeasurements(userId);
+      
+      if (!measurements || Object.keys(measurements).length === 0) {
+        toast("No saved measurements found in your profile");
+        return;
+      }
+      
+      // Update form with measurements from profile
+      setFormData(prev => ({
+        ...prev,
+        measurements: {
+          chest: measurements.chest || prev.measurements.chest,
+          waist: measurements.waist || prev.measurements.waist,
+          hips: measurements.hips || prev.measurements.hips,
+          length: measurements.length || prev.measurements.length,
+          inseam: measurements.inseam || prev.measurements.inseam,
+          shoulders: measurements.shoulders || prev.measurements.shoulders
+        }
+      }));
+      
+      toast.success("Your saved measurements have been loaded");
+    } catch (error) {
+      console.error("Error loading measurements:", error);
+      toast.error("Failed to load your measurements");
+    } finally {
+      setIsLoadingMeasurements(false);
+    }
+  };
 
   // Function to submit commission to Supabase
   const submitCommission = async (data: CommissionFormData) => {
@@ -312,7 +361,30 @@ export default function Commissions() {
 
             {/* Measurements */}
             <div>
-              <label class="block text-emerald-100 font-medium mb-3 text-sm">Measurements (inches)</label>
+              <div class="flex justify-between items-center mb-3">
+                <label class="block text-emerald-100 font-medium text-sm">Measurements (inches)</label>
+                <button
+                  type="button"
+                  onClick={loadMeasurementsFromProfile}
+                  disabled={isLoadingMeasurements()}
+                  class="text-emerald-400 hover:text-emerald-300 text-sm font-medium transition-colors flex items-center"
+                >
+                  <Show
+                    when={!isLoadingMeasurements()}
+                    fallback={
+                      <svg class="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    }
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                  </Show>
+                  {isLoadingMeasurements() ? "Loading..." : "Load from Profile"}
+                </button>
+              </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Chest */}
                 <div>
@@ -545,6 +617,12 @@ export default function Commissions() {
               </Show>
             </button>
           </form>
+          
+          {/* Small notice about measurement loading */}
+          <div class="mt-6 text-center text-xs text-emerald-300/60">
+            <p>You can load your saved measurements from your profile using the "Load from Profile" button.</p>
+            <p class="mt-1">Need to update your profile measurements? <a href="/profile/settings" class="text-emerald-400 hover:underline">Go to Profile Settings</a></p>
+          </div>
         </Motion.div>
       </div>
       <Toaster position="bottom-right" />
