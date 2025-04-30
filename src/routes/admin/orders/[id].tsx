@@ -25,9 +25,11 @@ interface Commission {
   user_id: string;
   created_at: string;
   updated_at: string;
+  user_email?: string;
+  user_name?: string;
 }
 
-export default function CommissionDetails() {
+export default function AdminCommissionDetails() {
   const params = useParams();
   const supabase = useSupabase();
   const auth = useAuth();
@@ -35,9 +37,9 @@ export default function CommissionDetails() {
   
   const [commission, setCommission] = createSignal<Commission | null>(null);
   const [isLoading, setIsLoading] = createSignal(true);
+  const [isUpdating, setIsUpdating] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [userName, setUserName] = createSignal("User");
-  const [showMessages, setShowMessages] = createSignal(false);
+  const [showMessages, setShowMessages] = createSignal(true);
   const [adminId, setAdminId] = createSignal('');
   const [adminName, setAdminName] = createSignal('Admin');
   
@@ -58,6 +60,15 @@ export default function CommissionDetails() {
         throw new Error("User ID not found");
       }
       
+      // Get the admin ID from environment variables
+      const adminIdValue = import.meta.env.VITE_ADMIN_ID;
+      setAdminId(adminIdValue);
+      
+      // Verify the current user is an admin
+      if (userId !== adminIdValue) {
+        throw new Error("You don't have permission to access this page");
+      }
+      
       // Get the commission ID from URL params
       const commissionId = params.id;
       
@@ -76,32 +87,31 @@ export default function CommissionDetails() {
         throw new Error(error.message);
       }
       
-      // Check if the commission belongs to the current user
-      if (data.user_id !== userId) {
-        throw new Error("You don't have permission to view this commission");
-      }
-      
-      setCommission(data as Commission);
-      
-      // Get admin ID from environment variable
-      setAdminId(import.meta.env.VITE_ADMIN_ID || '');
-      
-      // Fetch user details for chat
+      // Fetch user information for this commission
       const { data: userData, error: userError } = await supabase
         .from('profiles')
-        .select('full_name')
+        .select('email, full_name')
         .eq('id', data.user_id)
         .single();
-        
-      if (userData) {
-        setUserName(userData.full_name || 'User');
+      
+      if (userError) {
+        console.error("Error fetching user data:", userError);
       }
       
-      // Fetch admin details
+      // Combine commission and user data
+      const completeCommission = {
+        ...data,
+        user_email: userData?.email || 'Unknown email',
+        user_name: userData?.full_name || 'Unknown user'
+      };
+      
+      setCommission(completeCommission);
+      
+      // Get admin's name
       const { data: adminData, error: adminError } = await supabase
         .from('profiles')
         .select('full_name')
-        .eq('id', adminId())
+        .eq('id', adminIdValue)
         .single();
         
       if (adminData) {
@@ -110,8 +120,48 @@ export default function CommissionDetails() {
     } catch (err: any) {
       setError(err.message);
       toast.error(err.message);
+      
+      // Redirect to admin dashboard if not authorized
+      if (err.message.includes("permission")) {
+        setTimeout(() => {
+          navigate("/admin/orders", { replace: true });
+        }, 3000);
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  // Update commission status
+  const updateCommissionStatus = async (newStatus: string) => {
+    if (!commission()) return;
+    
+    setIsUpdating(true);
+    
+    try {
+      const { error } = await supabase
+        .from('commissions')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', commission()!.id);
+        
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      // Update local state
+      setCommission({
+        ...commission()!,
+        status: newStatus
+      });
+      
+      toast.success(`Commission status updated to ${newStatus}`);
+    } catch (err: any) {
+      toast.error("Failed to update status: " + err.message);
+    } finally {
+      setIsUpdating(false);
     }
   };
   
@@ -174,36 +224,6 @@ export default function CommissionDetails() {
     setShowMessages(!showMessages());
   };
   
-  // Cancel commission handler
-  const cancelCommission = async () => {
-    if (!commission()) return;
-    
-    if (!confirm("Are you sure you want to cancel this commission request? This action cannot be undone.")) {
-      return;
-    }
-    
-    try {
-      const { error } = await supabase
-        .from('commissions')
-        .update({ status: 'Cancelled' })
-        .eq('id', commission()?.id);
-        
-      if (error) {
-        throw new Error(error.message);
-      }
-      
-      // Update local state
-      setCommission({
-        ...commission()!,
-        status: 'Cancelled'
-      });
-      
-      toast.success("Commission cancelled successfully");
-    } catch (err: any) {
-      toast.error("Failed to cancel commission: " + err.message);
-    }
-  };
-  
   // Fetch commission details when component mounts
   createEffect(() => {
     if (!auth.isLoading()) {
@@ -216,7 +236,7 @@ export default function CommissionDetails() {
   });
   
   return (
-    <main class="min-h-screen bg-gradient-to-b from-emerald-950 to-gray-950 py-10 px-4 sm:px-6">
+    <main class="min-h-screen bg-gradient-to-b from-purple-950 to-gray-950 py-10 px-4 sm:px-6">
       <div class="max-w-5xl mx-auto">
         <Motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -225,43 +245,43 @@ export default function CommissionDetails() {
         >
           {/* Back Button */}
           <button
-            onClick={() => navigate('/profile/orders')}
-            class="mb-6 flex items-center text-emerald-400 hover:text-emerald-300 transition-colors"
+            onClick={() => navigate('/admin/orders')}
+            class="mb-6 flex items-center text-purple-400 hover:text-purple-300 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
             </svg>
-            Back to Commissions
+            Back to All Commissions
           </button>
           
           {/* Loading State */}
           <Show when={isLoading()}>
-            <div class="bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 p-10">
+            <div class="bg-gradient-to-br from-purple-900/30 to-purple-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-purple-700/20 p-10">
               <div class="flex flex-col items-center justify-center py-10">
-                <div class="animate-spin h-10 w-10 border-4 border-emerald-500 rounded-full border-t-transparent"></div>
-                <span class="mt-4 text-emerald-300">Loading commission details...</span>
+                <div class="animate-spin h-10 w-10 border-4 border-purple-500 rounded-full border-t-transparent"></div>
+                <span class="mt-4 text-purple-300">Loading commission details...</span>
               </div>
             </div>
           </Show>
           
           {/* Error State */}
           <Show when={!isLoading() && error()}>
-            <div class="bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 p-10">
+            <div class="bg-gradient-to-br from-purple-900/30 to-purple-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-purple-700/20 p-10">
               <div class="flex flex-col items-center justify-center py-10">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-red-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h3 class="text-xl text-white font-medium mb-2">Error Loading Commission</h3>
-                <p class="text-emerald-300/70 text-center mb-6">{error()}</p>
+                <p class="text-purple-300/70 text-center mb-6">{error()}</p>
                 <div class="flex space-x-4">
                   <button
                     onClick={() => fetchCommissionDetails()}
-                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow transition-all"
+                    class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg shadow transition-all"
                   >
                     Try Again
                   </button>
                   <button
-                    onClick={() => navigate('/profile/orders')}
+                    onClick={() => navigate('/admin/orders')}
                     class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg shadow transition-all"
                   >
                     Go Back
@@ -275,65 +295,147 @@ export default function CommissionDetails() {
           <Show when={!isLoading() && !error() && commission()}>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Commission Details Panel */}
-              <div class="lg:col-span-2 bg-gradient-to-br from-emerald-900/30 to-emerald-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-emerald-700/20 overflow-hidden">
-                <div class="border-b border-emerald-700/30 px-6 py-4 flex justify-between items-center">
+              <div class="lg:col-span-2 bg-gradient-to-br from-purple-900/30 to-purple-950/80 backdrop-blur-sm rounded-xl shadow-xl border border-purple-700/20 overflow-hidden">
+                <div class="border-b border-purple-700/30 px-6 py-4 flex justify-between items-center">
                   <h1 class="text-2xl font-bold text-white">
                     Commission Details
                   </h1>
-                  <span class={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(commission()!.status)}`}>
-                    {commission()!.status}
-                  </span>
+                  <div class="relative inline-block">
+                    <button
+                      type="button"
+                      disabled={isUpdating()}
+                      class={`inline-flex justify-between items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(commission()!.status)} ${isUpdating() ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={(e) => {
+                        const dropdown = document.getElementById('status-dropdown');
+                        dropdown?.classList.toggle('hidden');
+                        e.stopPropagation();
+                        
+                        // Close dropdown when clicking outside
+                        const closeDropdown = () => {
+                          dropdown?.classList.add('hidden');
+                          document.removeEventListener('click', closeDropdown);
+                        };
+                        
+                        document.addEventListener('click', closeDropdown);
+                      }}
+                    >
+                      <Show
+                        when={!isUpdating()}
+                        fallback={
+                          <div class="flex items-center">
+                            <div class="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent mr-1"></div>
+                            Updating...
+                          </div>
+                        }
+                      >
+                        <>
+                          {commission()!.status}
+                          <svg class="-mr-1 ml-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                          </svg>
+                        </>
+                      </Show>
+                    </button>
+                    <div
+                      id="status-dropdown"
+                      class="hidden origin-top-right absolute right-0 mt-2 w-40 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-10"
+                    >
+                      <div class="py-1" role="none">
+                        <button
+                          onClick={() => updateCommissionStatus('Pending')}
+                          class="text-yellow-300 block w-full text-left px-4 py-2 text-sm hover:bg-gray-700"
+                        >
+                          Pending
+                        </button>
+                        <button
+                          onClick={() => updateCommissionStatus('In Progress')}
+                          class="text-blue-300 block w-full text-left px-4 py-2 text-sm hover:bg-gray-700"
+                        >
+                          In Progress
+                        </button>
+                        <button
+                          onClick={() => updateCommissionStatus('Completed')}
+                          class="text-green-300 block w-full text-left px-4 py-2 text-sm hover:bg-gray-700"
+                        >
+                          Completed
+                        </button>
+                        <button
+                          onClick={() => updateCommissionStatus('Cancelled')}
+                          class="text-red-300 block w-full text-left px-4 py-2 text-sm hover:bg-gray-700"
+                        >
+                          Cancelled
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 
                 <div class="p-6">
+                  {/* Customer Information */}
+                  <div class="mb-8">
+                    <h2 class="text-purple-400 text-sm font-medium uppercase tracking-wider mb-3">Customer Information</h2>
+                    
+                    <div class="bg-purple-950/50 border border-purple-700/30 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div class="text-purple-300/70 text-xs">Customer Name</div>
+                        <div class="text-purple-100 font-medium">{commission()!.user_name}</div>
+                      </div>
+                      
+                      <div>
+                        <div class="text-purple-300/70 text-xs">Customer Email</div>
+                        <div class="text-purple-100 font-medium">{commission()!.user_email}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
                   {/* Main Info Section */}
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div>
-                      <h2 class="text-emerald-400 text-sm font-medium uppercase tracking-wider mb-3">Commission Information</h2>
+                      <h2 class="text-purple-400 text-sm font-medium uppercase tracking-wider mb-3">Commission Information</h2>
                       
                       <div class="space-y-3">
                         <div>
-                          <div class="text-emerald-300/70 text-xs">Garment Type</div>
-                          <div class="text-emerald-100 font-medium capitalize">{commission()!.garment_type}</div>
+                          <div class="text-purple-300/70 text-xs">Garment Type</div>
+                          <div class="text-purple-100 font-medium capitalize">{commission()!.garment_type}</div>
                         </div>
                         
                         <div>
-                          <div class="text-emerald-300/70 text-xs">Budget Range</div>
-                          <div class="text-emerald-100 font-medium">{formatBudget(commission()!.budget)}</div>
+                          <div class="text-purple-300/70 text-xs">Budget Range</div>
+                          <div class="text-purple-100 font-medium">{formatBudget(commission()!.budget)}</div>
                         </div>
                         
                         <div>
-                          <div class="text-emerald-300/70 text-xs">Timeline</div>
-                          <div class="text-emerald-100 font-medium">{formatTimeline(commission()!.timeline)}</div>
+                          <div class="text-purple-300/70 text-xs">Timeline</div>
+                          <div class="text-purple-100 font-medium">{formatTimeline(commission()!.timeline)}</div>
                         </div>
                         
                         <div>
-                          <div class="text-emerald-300/70 text-xs">Request Date</div>
-                          <div class="text-emerald-100 font-medium">{formatDate(commission()!.created_at)}</div>
+                          <div class="text-purple-300/70 text-xs">Request Date</div>
+                          <div class="text-purple-100 font-medium">{formatDate(commission()!.created_at)}</div>
                         </div>
                         
                         <div>
-                          <div class="text-emerald-300/70 text-xs">Last Updated</div>
-                          <div class="text-emerald-100 font-medium">{formatDate(commission()!.updated_at)}</div>
+                          <div class="text-purple-300/70 text-xs">Last Updated</div>
+                          <div class="text-purple-100 font-medium">{formatDate(commission()!.updated_at)}</div>
                         </div>
                       </div>
                     </div>
                     
                     <div>
-                      <h2 class="text-emerald-400 text-sm font-medium uppercase tracking-wider mb-3">Measurements</h2>
+                      <h2 class="text-purple-400 text-sm font-medium uppercase tracking-wider mb-3">Measurements</h2>
                       
                       <div class="grid grid-cols-2 gap-3">
                         <Show when={commission()!.garment_type === 'shirt' || commission()!.garment_type === 'jacket'}>
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Chest</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Chest</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.chest > 0 ? `${commission()!.measurements.chest} inches` : 'N/A'}
                             </div>
                           </div>
                           
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Shoulders</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Shoulders</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.shoulders > 0 ? `${commission()!.measurements.shoulders} inches` : 'N/A'}
                             </div>
                           </div>
@@ -341,29 +443,29 @@ export default function CommissionDetails() {
                         
                         <Show when={commission()!.garment_type === 'pants'}>
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Waist</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Waist</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.waist > 0 ? `${commission()!.measurements.waist} inches` : 'N/A'}
                             </div>
                           </div>
                           
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Hips</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Hips</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.hips > 0 ? `${commission()!.measurements.hips} inches` : 'N/A'}
                             </div>
                           </div>
                           
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Length</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Length</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.length > 0 ? `${commission()!.measurements.length} inches` : 'N/A'}
                             </div>
                           </div>
                           
                           <div>
-                            <div class="text-emerald-300/70 text-xs">Inseam</div>
-                            <div class="text-emerald-100 font-medium">
+                            <div class="text-purple-300/70 text-xs">Inseam</div>
+                            <div class="text-purple-100 font-medium">
                               {commission()!.measurements.inseam > 0 ? `${commission()!.measurements.inseam} inches` : 'N/A'}
                             </div>
                           </div>
@@ -373,54 +475,26 @@ export default function CommissionDetails() {
                   </div>
                   
                   {/* Details Section */}
-                  <div class="mb-8">
-                    <h2 class="text-emerald-400 text-sm font-medium uppercase tracking-wider mb-3">Additional Details</h2>
-                    <div class="bg-emerald-950/50 border border-emerald-700/30 rounded-lg p-4">
-                      <p class="text-emerald-100 whitespace-pre-wrap">
+                  <div class="mb-6">
+                    <h2 class="text-purple-400 text-sm font-medium uppercase tracking-wider mb-3">Additional Details</h2>
+                    <div class="bg-purple-950/50 border border-purple-700/30 rounded-lg p-4">
+                      <p class="text-purple-100 whitespace-pre-wrap">
                         {commission()!.details || "No additional details provided."}
                       </p>
                     </div>
                   </div>
                   
                   {/* Actions */}
-                  <div class="flex flex-wrap gap-4 justify-between border-t border-emerald-700/30 pt-6">
+                  <div class="flex flex-wrap gap-4 justify-between border-t border-purple-700/30 pt-6">
                     <div>
                       <button
                         onClick={toggleMessages}
-                        class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded-lg shadow transition-all flex items-center"
+                        class="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white font-medium rounded-lg shadow transition-all flex items-center"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                           <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
                         </svg>
                         {showMessages() ? "Hide Messages" : "Show Messages"}
-                      </button>
-                    </div>
-                    
-                    <div class="flex flex-wrap gap-4">
-                      <button
-                        onClick={() => navigate(`/profile/orders/edit/${commission()!.id}`)}
-                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={commission()!.status !== 'Pending'}
-                      >
-                        <span class="flex items-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                          </svg>
-                          Edit Commission
-                        </span>
-                      </button>
-                      
-                      <button
-                        onClick={cancelCommission}
-                        class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={commission()!.status === 'Cancelled' || commission()!.status === 'Completed'}
-                      >
-                        <span class="flex items-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                          Cancel Commission
-                        </span>
                       </button>
                     </div>
                   </div>
@@ -434,23 +508,23 @@ export default function CommissionDetails() {
                     commissionId={commission()!.id}
                     adminId={adminId()}
                     adminName={adminName()}
-                    userName={userName()}
+                    userName={commission()!.user_name || 'Customer'}
                   />
                 </Show>
                 <Show when={!showMessages()}>
-                  <div class="bg-gradient-to-br from-emerald-900/20 to-emerald-950/70 backdrop-blur-sm rounded-xl shadow-lg border border-emerald-700/20 p-6 flex flex-col items-center justify-center h-[300px] text-center">
-                    <div class="bg-emerald-700/20 p-4 rounded-full mb-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+                  <div class="bg-gradient-to-br from-purple-900/20 to-purple-950/70 backdrop-blur-sm rounded-xl shadow-lg border border-purple-700/20 p-6 flex flex-col items-center justify-center h-[300px] text-center">
+                    <div class="bg-purple-700/20 p-4 rounded-full mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
                       </svg>
                     </div>
-                    <h3 class="text-lg font-medium text-emerald-100 mb-2">Commission Chat</h3>
-                    <p class="text-emerald-300/70 mb-4">
-                      Discuss details of your commission with our team
+                    <h3 class="text-lg font-medium text-purple-100 mb-2">Customer Chat</h3>
+                    <p class="text-purple-300/70 mb-4">
+                      Communicate with the customer about their commission
                     </p>
                     <button
                       onClick={toggleMessages}
-                      class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow transition-all flex items-center"
+                      class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg shadow transition-all flex items-center"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />

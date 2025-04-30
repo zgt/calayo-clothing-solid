@@ -162,7 +162,7 @@ export default function AdminCommissions() {
   
   // View details of a specific commission
   const viewCommissionDetails = (id: string) => {
-    navigate(`/admin/commissions/${id}`);
+    navigate(`/admin/orders/${id}`);
   };
   
   // Filter commissions based on status and search term
